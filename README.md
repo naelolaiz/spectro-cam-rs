@@ -9,6 +9,25 @@ I use it with my [i-PhosHD][iphos] low-budget spectrometer.
 
 ![Screenshot](res/screenshot.png)
 
+## showing colors for visible spectrum
+
+Using a "Little Garden" spectrometer (aliexpress).
+
+Calibration with a fluorescent lamp: 
+![calibration with a fluorescent lamp](res/fluorescent_tube_color_screenshot.png)
+
+### LEDs
+Red LED:
+![red LED](res/red_led.png)
+Green LED:
+![green LED](res/green_led.png)
+Blue LED:
+![blue LED](res/blue_led.png)
+Yellow LED:
+![yellow LED](res/yellow_led.png)
+White LED:
+![white LED](res/white_led.png)
+
 # Features
 
   - Adjustable webcam picture window size
@@ -57,3 +76,4 @@ to intervene to uphold that code of conduct.
 [team]: https://github.com/DerFetzer
 [theremino]: https://physicsopenlab.org/2015/11/26/webcam-diffraction-grating-spectrometer/
 [iphos]: https://chriswesley.org/spectrometer.htm
+

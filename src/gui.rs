@@ -3,7 +3,7 @@ use crate::config::{CameraControl, GainPresets, Linearize, SpectrometerConfig, S
 use crate::spectrum::{SpectrumContainer, SpectrumRgb};
 use crate::tungsten_halogen::reference_from_filament_temp;
 use crate::{ThreadId, ThreadResult};
-use egui::plot::{Legend, Line, MarkerShape, Plot, Points, Text, VLine, Value, Values};
+use egui::plot::{Legend, Line, MarkerShape, Plot, Points, Polygon, Text, VLine, Value, Values};
 use egui::{
     Button, Color32, ComboBox, Context, Rect, RichText, Rounding, Sense, Slider, Stroke, TextureId,
     Vec2,
@@ -20,6 +20,103 @@ use v4l::{
     control::{Description, Flags},
     Control,
 };
+
+pub fn wavelength_to_color(wavelength: f64) -> Color32 {
+    let gamma = 0.8;
+    let intensity_max = 255.0;
+    let factor;
+    let (mut red, mut green, mut blue): (f64, f64, f64);
+
+    // Wavelength to RGB mapping
+    if (380.0..=440.0).contains(&wavelength) {
+        // Violet to Blue
+        red = -(wavelength - 440.0) / (440.0 - 380.0);
+        green = 0.0;
+        blue = 1.0;
+    } else if (440.0..=490.0).contains(&wavelength) {
+        // Blue to Cyan
+        red = 0.0;
+        green = (wavelength - 440.0) / (490.0 - 440.0);
+        blue = 1.0;
+    } else if (490.0..=510.0).contains(&wavelength) {
+        // Cyan to Green
+        red = 0.0;
+        green = 1.0;
+        blue = -(wavelength - 510.0) / (510.0 - 490.0);
+    } else if (510.0..=580.0).contains(&wavelength) {
+        // Green to Yellow
+        red = (wavelength - 510.0) / (580.0 - 510.0);
+        green = 1.0;
+        blue = 0.0;
+    } else if (580.0..=645.0).contains(&wavelength) {
+        // Yellow to Red
+        red = 1.0;
+        green = -(wavelength - 645.0) / (645.0 - 580.0);
+        blue = 0.0;
+    } else if (645.0..=750.0).contains(&wavelength) {
+        // Red
+        red = 1.0;
+        green = 0.0;
+        blue = 0.0;
+    } else if (750.0..=1000.0).contains(&wavelength) {
+        // Near IR - Fade to black
+        let t = (wavelength - 750.0) / (1000.0 - 750.0);
+        red = 1.0 - t;
+        green = 0.0;
+        blue = 0.0;
+    } else if (1000.0..).contains(&wavelength) {
+        // Far IR - Black
+        red = 0.0;
+        green = 0.0;
+        blue = 0.0;
+    } else if (280.0..380.0).contains(&wavelength) {
+        // Near UV - Fade from black to violet
+        let t = (wavelength - 280.0) / (380.0 - 280.0);
+        red = 0.5 * (1.0 - t);
+        green = 0.0;
+        blue = 0.5 + 0.5 * t;
+    } else if (0.0..280.0).contains(&wavelength) {
+        // Far UV - Black
+        red = 0.0;
+        green = 0.0;
+        blue = 0.0;
+    } else {
+        // Default to black for out-of-range values
+        red = 0.0;
+        green = 0.0;
+        blue = 0.0;
+    }
+
+    // Intensity adjustment for wavelengths at the edges of visibility
+    if (380.0..=420.0).contains(&wavelength) {
+        factor = 0.3 + 0.7 * (wavelength - 380.0) / (420.0 - 380.0);
+    } else if (420.0..=700.0).contains(&wavelength) {
+        factor = 1.0;
+    } else if (700.0..=750.0).contains(&wavelength) {
+        factor = 1.0 - 0.5 * (wavelength - 700.0) / (750.0 - 700.0);
+    } else {
+        factor = 0.0;
+    }
+
+    // Apply gamma correction and intensity factor
+    red = adjust_color(red, factor, gamma, intensity_max);
+    green = adjust_color(green, factor, gamma, intensity_max);
+    blue = adjust_color(blue, factor, gamma, intensity_max);
+
+    Color32::from_rgb(red as u8, green as u8, blue as u8)
+}
+
+pub fn adjust_color(color: f64, factor: f64, gamma: f64, intensity_max: f64) -> f64 {
+    if color == 0.0 {
+        0.0
+    } else {
+        (intensity_max * ((color * factor).powf(gamma))).round()
+    }
+}
+
+
+
+
 
 pub struct SpectrometerGui {
     config: SpectrometerConfig,
@@ -196,6 +293,7 @@ impl SpectrometerGui {
                     if self.config.view_config.draw_spectrum_b {
                         plot_ui.line(self.get_spectrum_line(2).color(Color32::BLUE).name("b"));
                     }
+
                     if self.config.view_config.draw_spectrum_combined {
                         plot_ui.line(
                             self.get_spectrum_line(3)
@@ -204,6 +302,36 @@ impl SpectrometerGui {
                         );
                     }
 
+                let spectrum_data: Vec<egui::plot::Value> = self.spectrum_container
+                    .get_spectrum_channel(3, &self.config)
+                    .into_iter()
+                    .map(|sp| egui::plot::Value::new(sp.wavelength as f64, sp.value as f64))
+                    .collect();
+
+                    if !spectrum_data.is_empty() {
+                        // Plot the gray sum line
+                        plot_ui.line(
+                            Line::new(Values::from_values(spectrum_data.clone()))
+                                .color(Color32::LIGHT_GRAY)
+                                .name("sum"),
+                        );
+
+                        // Draw vertical colored lines under the sum line
+                        for point in &spectrum_data {
+                            let color = wavelength_to_color(point.x);
+
+                            // Create a line from (x, 0) to (x, y)
+                            let vertical_line = Line::new(Values::from_values(vec![
+                                Value::new(point.x, 0.0),
+                                Value::new(point.x, point.y),
+                            ]))
+                            .color(color);
+
+                            plot_ui.line(vertical_line);
+                        }                        
+                    }
+                    
+                    
                     if self.config.view_config.draw_peaks || self.config.view_config.draw_dips {
                         let max_spectrum_value = self
                             .spectrum_container

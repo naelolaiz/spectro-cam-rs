@@ -147,9 +147,9 @@ impl Default for ViewConfig {
         Self {
             window_size: PhysicalSize::new(800, 600),
             image_scale: 0.25,
-            draw_spectrum_r: true,
-            draw_spectrum_g: true,
-            draw_spectrum_b: true,
+            draw_spectrum_r: false,
+            draw_spectrum_g: false,
+            draw_spectrum_b: false,
             draw_spectrum_combined: true,
             draw_peaks: true,
             draw_dips: true,
