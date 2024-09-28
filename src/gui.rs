@@ -3,7 +3,7 @@ use crate::config::{CameraControl, GainPresets, Linearize, SpectrometerConfig, S
 use crate::spectrum::{SpectrumContainer, SpectrumRgb};
 use crate::tungsten_halogen::reference_from_filament_temp;
 use crate::{ThreadId, ThreadResult};
-use egui::plot::{Legend, Line, MarkerShape, Plot, Points, Text, VLine, Value, Values};
+use egui::plot::{Legend, Line, MarkerShape, Plot, Points, Polygon, Text, VLine, Value, Values};
 use egui::{
     Button, Color32, ComboBox, Context, Rect, RichText, Rounding, Sense, Slider, Stroke, TextureId,
     Vec2,
@@ -20,6 +20,20 @@ use v4l::{
     control::{Description, Flags},
     Control,
 };
+
+/// Function to map wavelength (x position) to color
+pub fn wavelength_to_color(wavelength: f64) -> Color32 {
+    match wavelength {
+        w if w < 450.0 => Color32::from_rgb(0, 0, 255),     // Blue
+        w if w < 495.0 => Color32::from_rgb(0, 255, 255),   // Cyan
+        w if w < 570.0 => Color32::from_rgb(0, 255, 0),     // Green
+        w if w < 590.0 => Color32::from_rgb(255, 255, 0),   // Yellow
+        w if w < 620.0 => Color32::from_rgb(255, 165, 0),   // Orange
+        w if w <= 750.0 => Color32::from_rgb(255, 0, 0),    // Red
+        _ => Color32::from_rgb(0, 0, 0),                    // Outside visible range
+    }
+}
+
 
 pub struct SpectrometerGui {
     config: SpectrometerConfig,
@@ -196,6 +210,7 @@ impl SpectrometerGui {
                     if self.config.view_config.draw_spectrum_b {
                         plot_ui.line(self.get_spectrum_line(2).color(Color32::BLUE).name("b"));
                     }
+
                     if self.config.view_config.draw_spectrum_combined {
                         plot_ui.line(
                             self.get_spectrum_line(3)
@@ -204,6 +219,42 @@ impl SpectrometerGui {
                         );
                     }
 
+                    let spectrum_data: Vec<egui::plot::Value> = self.spectrum_container
+                        .get_spectrum_channel(3, &self.config)
+                        .into_iter()
+                        .map(|sp| egui::plot::Value::new(sp.wavelength as f64, sp.value as f64))
+                        .collect();
+
+                    if !spectrum_data.is_empty() {
+                        // Group data points by color
+                        let mut color_segments: Vec<(Color32, Vec<Value>)> = Vec::new();
+                        let mut current_color = wavelength_to_color(spectrum_data[0].x);
+                        let mut current_segment: Vec<Value> = Vec::new();
+
+                        for &point in &spectrum_data {
+                            let point_color = wavelength_to_color(point.x);
+                            if point_color != current_color && !current_segment.is_empty() {
+                                // Save the current segment
+                                color_segments.push((current_color, current_segment.clone()));
+                                current_segment.clear();
+                                current_color = point_color;
+                            }
+                            current_segment.push(point);
+                        }
+                        // Add the last segment
+                        if !current_segment.is_empty() {
+                            color_segments.push((current_color, current_segment));
+                        }
+
+                        // Plot each segment with its color
+                        for (color, segment) in color_segments {
+                            plot_ui.line(
+                                Line::new(Values::from_values(segment))
+                                    .color(color),
+                            );
+                        }
+                    }                    
+                    
                     if self.config.view_config.draw_peaks || self.config.view_config.draw_dips {
                         let max_spectrum_value = self
                             .spectrum_container
@@ -974,4 +1025,36 @@ impl SpectrometerGui {
             log::error!("Could not persist config: {:?}", e);
         }
     }
+    pub fn plot_spectrum(ui: &mut egui::Ui, spectrum_data: &[(f64, f64)]) {
+        // Map the (f64, f64) tuples to `Value` instances
+        let line_values = Values::from_values_iter(
+            spectrum_data.iter().map(|&(x, y)| Value::new(x, y)),
+        );
+        let line = Line::new(line_values).color(Color32::GRAY);  // Original line
+    
+        // Create a polygon for the area under the line
+        let mut points_with_base: Vec<(f64, f64)> = spectrum_data.to_vec();
+    
+        // Add points to close the polygon at the base (x-axis)
+        points_with_base.push((spectrum_data[spectrum_data.len() - 1].0, 0.0));  // last point at the base
+        points_with_base.push((spectrum_data[0].0, 0.0));  // first point at the base
+    
+        // Map the points to `Value` instances
+        let polygon_values = Values::from_values_iter(
+            points_with_base.iter().map(|&(x, y)| Value::new(x, y)),
+        );
+    
+        // Create the polygon with a static color (since `color_fn` doesn't exist)
+        let polygon = Polygon::new(polygon_values).color(Color32::GRAY);
+    
+        egui::plot::Plot::new("spectrum_plot")
+            .legend(Legend::default())
+            .show(ui, |plot_ui| {
+                plot_ui.polygon(polygon);  // Add the filled polygon first
+                plot_ui.line(line);        // Add the gray line on top
+            });
+    }
+
 }
+
+
