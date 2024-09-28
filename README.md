@@ -57,3 +57,6 @@ to intervene to uphold that code of conduct.
 [team]: https://github.com/DerFetzer
 [theremino]: https://physicsopenlab.org/2015/11/26/webcam-diffraction-grating-spectrometer/
 [iphos]: https://chriswesley.org/spectrometer.htm
+
+## showing colors for visible spectrum
+![Screenshot](res/fluorescent_tube_color_screenshot.png)
