@@ -27,6 +27,12 @@ Yellow LED:
 ![yellow LED](res/yellow_led.png)
 White LED:
 ![white LED](res/white_led.png)
+Blue laser:
+![blue laser](res/blue_laser_448nm.png)
+Green laser:
+![green laser](res/green_laser_531nm.png)
+Red Laser:
+![red laser](res/red_laser_659nm.png)
 
 # Features
 
